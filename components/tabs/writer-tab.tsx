@@ -5,153 +5,81 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Loader2, AlertCircle } from "lucide-react"
 
-// ========================================
-// Type Definitions
-// ========================================
-type Mode = "outline" | "section" | "expand" | "polish"
-
-interface WriterInstance {
-  writeStreaming: (prompt: string, options?: { context?: string }) => AsyncIterable<string>
-  destroy: () => void
-}
-
-interface DownloadProgressEvent {
-  loaded: number
-  total: number
-}
-
-interface WriterMonitor {
-  addEventListener: (event: string, handler: (e: DownloadProgressEvent) => void) => void
-}
-
-interface WriterCreateOptions {
-  tone: string
-  format: string
-  length: string
-  sharedContext: string
-  monitor?: (m: WriterMonitor) => void
-}
-
-interface WindowWithWriter extends Window {
-  Writer?: {
-    availability: () => Promise<string>
-    create: (options: WriterCreateOptions) => Promise<WriterInstance>
-  }
-}
+import {
+  getWriter,
+  writerWriteStreaming,
+  isWriterSupported,
+  destroyWriter,
+} from "@/lib/writer"
 
 // ========================================
-// Prompt Generation Utilities
+// Smart Article Prompt Template
 // ========================================
 const PromptTemplates = {
-  createOutline: (notes: string): string => `
-You are an expert academic writer. Create a detailed and logical outline based on the following research notes:
+  articleDraft: (topic: string, keywords: string, notes: string): string => `
+You are a professional news writer drafting an article for a major international publication.
+Use Associated Press (AP) style, maintain an objective tone, and structure the piece in the inverted pyramid:
+- Lede (what happened)
+- Nut graf (why it matters)
+- Body (context, quotes, background)
+- Sidebar or analysis (implications, what’s next)
 
-Research Notes:
-${notes.trim()}
+Write a factual placeholder-based draft (300–2000 words).
 
-Structure the outline with clear headings and subheadings that cover all key points.`,
-  createSection: (heading: string, notes: string): string => `
-You are an expert academic writer. Write a clear and coherent academic section for the following outline heading based on the notes provided.
+Topic: ${topic.trim()}
+Keywords: ${keywords.trim()}
+Outline/Notes (optional): ${notes.trim()}
 
-Heading:
-${heading.trim()}
-
-Notes:
-${notes.trim()}
-
-Ensure the section is well structured and uses formal academic language.`,
-  expandParagraph: (sectionText: string): string => `
-You are an expert academic writer. Expand the following academic section by adding details, explanations, and relevant examples without changing its meaning:
-
-Section Text:
-${sectionText.trim()}
-
-Make the writing fluent, professional, and suitable for scholarly publication.`,
-  polishDraft: (draftText: string): string => `
-You are an expert academic writer. Please polish and improve the following draft for clarity, grammar, sophistication, and flow while maintaining the original meaning:
-
-Draft:
-${draftText.trim()}`,
+Guidelines:
+- Replace unverifiable facts with [SOURCE], [DATE], [LOCATION].
+- Add quote placeholders like: "QUOTE" — [OFFICIAL NAME], [POSITION].
+- Include a bullet timeline of key events.
+- End with a one-line SEO summary and 3–5 SEO tags.
+- Output in clean markdown.
+`,
 }
 
 // ========================================
-// Constants
+// Component
 // ========================================
-const MODE_LABELS = {
-  outline: "Generate Outline from Notes",
-  section: "Generate Section from Heading & Notes",
-  expand: "Expand Text",
-  polish: "Polish Draft",
-} as const
-
-const INPUT_PLACEHOLDERS = {
-  outline: "Enter your research notes...",
-  expand: "Enter text to expand...",
-  polish: "Enter draft text to polish...",
-  sectionHeading: "e.g., Introduction, Literature Review, Methodology",
-  sectionNotes: "Enter notes for this section...",
-} as const
-
-// ========================================
-// Main Component
-// ========================================
-export function WriterTab() {
-  // Writer state
-  const [writer, setWriter] = useState<WriterInstance | null>(null)
+function WriterTab() {
   const [isWriterAvailable, setIsWriterAvailable] = useState(false)
   const [isInitializing, setIsInitializing] = useState(true)
   const [downloadProgress, setDownloadProgress] = useState(0)
 
-  // UI state
-  const [mode, setMode] = useState<Mode>("outline")
   const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState("")
-
-  // Input state
-  const [notesInput, setNotesInput] = useState("")
-  const [sectionHeading, setSectionHeading] = useState("")
-  const [sectionNotes, setSectionNotes] = useState("")
+  const [topic, setTopic] = useState("")
+  const [keywords, setKeywords] = useState("")
+  const [notes, setNotes] = useState("")
   const [output, setOutput] = useState("")
 
-  // Writer Initialization
+  // Initialize Chrome Writer API
   const initializeWriter = useCallback(async () => {
     setIsInitializing(true)
     setError("")
     setDownloadProgress(0)
-
-    const windowWithWriter = window as WindowWithWriter
-    if (!windowWithWriter.Writer) {
-      setError("Chrome AI Writer not available. Use Chrome 137+ with flags enabled.")
-      setIsWriterAvailable(false)
-      setIsInitializing(false)
-      return
-    }
-
     try {
-      const availability = await windowWithWriter.Writer.availability()
-      if (availability === "unavailable") {
-        setError("Writer API unavailable. Check chrome://on-device-internals.")
+      if (!isWriterSupported()) {
+        setError("Writer API not available. Use Chrome 137+ with origin trial enabled.")
         setIsWriterAvailable(false)
         setIsInitializing(false)
         return
       }
 
-      const writerInstance = await windowWithWriter.Writer.create({
-        tone: "formal",
+      await getWriter({
+        tone: "neutral",
         format: "markdown",
         length: "long",
-        sharedContext: "Academic research paper writing and scholarly communication",
-        monitor(m: WriterMonitor) {
-          m.addEventListener("downloadprogress", (e: DownloadProgressEvent) => {
-            const pct = Math.round((e.loaded / e.total) * 100)
-            setDownloadProgress(pct)
-          })
-        },
+        expectedInputLanguages: ["en"],
+        expectedContextLanguages: ["en"],
+        outputLanguage: "en",
+        sharedContext:
+          "News article generation for digital publications, AP style, factual placeholders, SEO optimization, and inverted pyramid writing.",
+        onDownloadProgress: (p) => setDownloadProgress(p),
       })
 
-      setWriter(writerInstance)
       setIsWriterAvailable(true)
-      setError("")
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to initialize Writer API"
       setError(msg)
@@ -165,74 +93,42 @@ export function WriterTab() {
   useEffect(() => {
     initializeWriter()
     return () => {
-      if (writer) {
-        try { writer.destroy() } catch { /* ignore */ }
-      }
+      try { destroyWriter() } catch {}
     }
   }, [initializeWriter])
 
-  // Prompt builder & validation
-  const buildPrompt = useCallback(() => {
-    switch (mode) {
-      case "outline":
-        return notesInput.trim() ? PromptTemplates.createOutline(notesInput) : null
-      case "section":
-        return sectionHeading.trim() && sectionNotes.trim()
-          ? PromptTemplates.createSection(sectionHeading, sectionNotes)
-          : null
-      case "expand":
-        return notesInput.trim() ? PromptTemplates.expandParagraph(notesInput) : null
-      case "polish":
-        return notesInput.trim() ? PromptTemplates.polishDraft(notesInput) : null
-      default:
-        return null
-    }
-  }, [mode, notesInput, sectionHeading, sectionNotes])
-
+  // Validate input
   const validateInput = useCallback(() => {
-    if (mode === "section") {
-      if (!sectionHeading.trim()) return "Please enter a section heading"
-      if (!sectionNotes.trim()) return "Please enter section notes"
-    } else {
-      if (!notesInput.trim()) {
-        const field = mode === "outline" ? "research notes" : mode === "expand" ? "text to expand" : "draft"
-        return `Please enter ${field}`
-      }
-    }
+    if (!topic.trim()) return "Please enter a topic (e.g., 'EU AI Act enforcement')."
+    if (!keywords.trim()) return "Please enter a few keywords."
     return null
-  }, [mode, notesInput, sectionHeading, sectionNotes])
+  }, [topic, keywords])
 
-  // Generate content
+  // Generate article
   const handleGenerate = async () => {
     setError("")
     setOutput("")
 
-    if (!writer) {
-      setError("Writer not initialized. Refresh the page.")
-      return
-    }
     const validationError = validateInput()
     if (validationError) {
       setError(validationError)
       return
     }
-    const prompt = buildPrompt()
-    if (!prompt) {
-      setError("Failed to build prompt")
-      return
-    }
 
+    const prompt = PromptTemplates.articleDraft(topic, keywords, notes)
     setIsGenerating(true)
+
     try {
       let acc = ""
-      const stream = writer.writeStreaming(prompt, { context: `Mode: ${mode}` })
+      const stream = await writerWriteStreaming(prompt, { context: "Smart Article Writer" })
       for await (const chunk of stream) {
         acc += chunk
+        // collapse accidental triple blank lines as we stream
         setOutput(acc.replace(/\n\s*\n\s*\n/g, "\n\n").trim())
       }
       if (!acc.trim()) setError("No content generated. Try different input.")
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to generate content."
+      const msg = err instanceof Error ? err.message : "Generation failed."
       setError(msg)
       console.error("Generation error:", err)
     } finally {
@@ -240,197 +136,155 @@ export function WriterTab() {
     }
   }
 
-  // Handlers
-  const handleModeChange = (newMode: string) => {
-    setMode(newMode as Mode)
-    setError("")
+  const handleClear = () => {
+    setTopic("")
+    setKeywords("")
+    setNotes("")
     setOutput("")
+    setError("")
   }
+
   const handleCopy = async () => {
     if (!output) return
     try { await navigator.clipboard.writeText(output) } catch {}
   }
-  const handleClear = () => {
-    setNotesInput("")
-    setSectionHeading("")
-    setSectionNotes("")
-    setOutput("")
-    setError("")
-  }
 
-  const isDisabled =
-    isGenerating ||
-    (mode === "section" ? !sectionHeading.trim() || !sectionNotes.trim() : !notesInput.trim())
+  // ========================================
+  // UI Rendering
+  // ========================================
 
-  // Render
   if (isInitializing) {
     return (
-      <div className="space-y-6">
-        <div className="flex flex-col items-center justify-center py-12">
-          <Loader2 className="h-12 w-12 animate-spin text-purple-600 mb-4" />
-          <p className="text-lg font-medium text-gray-700">Initializing Chrome AI Writer...</p>
-          {downloadProgress > 0 && downloadProgress < 100 && (
-            <div className="mt-6 w-full max-w-md space-y-2">
-              <div className="bg-gray-200 rounded-full h-3 overflow-hidden">
-                <div
-                  className="bg-purple-600 h-3 transition-all duration-300 ease-out"
-                  style={{ width: `${downloadProgress}%` }}
-                  role="progressbar"
-                  aria-valuenow={downloadProgress}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                />
-              </div>
-              <p className="text-sm text-gray-600 text-center">
-                Downloading model: {downloadProgress}%
-              </p>
+      <div className="flex flex-col items-center justify-center py-12 space-y-4">
+        <Loader2 className="h-10 w-10 animate-spin text-purple-600" />
+        <p className="text-gray-300 font-medium">Initializing Chrome AI Writer...</p>
+        {downloadProgress > 0 && (
+          <div className="w-full max-w-md">
+            <div className="bg-gray-700/50 rounded-full h-3 overflow-hidden">
+              <div
+                className="bg-purple-600 h-3 transition-all duration-300 ease-out"
+                style={{ width: `${downloadProgress}%` }}
+              />
             </div>
-          )}
-        </div>
+            <p className="text-sm text-gray-400 text-center mt-2">
+              Downloading model: {downloadProgress}%
+            </p>
+          </div>
+        )}
       </div>
     )
   }
 
   if (!isWriterAvailable) {
     return (
-      <div className="space-y-6">
-        <div className="p-4 bg-red-100 border border-red-300 rounded-md text-red-700 flex items-start gap-2">
+      <div className="space-y-4">
+        <div className="p-4 bg-red-500/10 border border-red-400/40 rounded-md text-red-200 flex gap-2">
           <AlertCircle className="h-5 w-5 flex-shrink-0" />
           <p>{error}</p>
         </div>
-        <Button onClick={initializeWriter} variant="outline">
-          Retry Initialization
-        </Button>
+        <Button onClick={initializeWriter} variant="outline">Retry Initialization</Button>
       </div>
     )
   }
 
-  return (
-    <div className="space-y-6">
-      {/* Mode Selector */}
-      <div>
-        <label htmlFor="mode-select" className="block text-sm font-medium mb-2">
-          Select Mode
-        </label>
-        <select
-          id="mode-select"
-          className="w-full border rounded p-2.5 focus:ring-2 focus:ring-purple-500"
-          value={mode}
-          onChange={(e) => handleModeChange(e.target.value)}
-          disabled={isGenerating}
-        >
-          {(Object.keys(MODE_LABELS) as Mode[]).map((key) => (
-            <option key={key} value={key}>
-              {MODE_LABELS[key]}
-            </option>
-          ))}
-        </select>
-      </div>
+  const wordCount = output ? output.trim().split(/\s+/).length : 0
 
-      {/* Inputs */}
-      {mode === "section" ? (
-        <>
-          <div>
-            <label htmlFor="section-heading" className="block text-sm font-medium mb-2">
-              Section Heading
-            </label>
-            <input
-              id="section-heading"
-              type="text"
-              className="w-full border rounded p-2.5 focus:ring-2 focus:ring-purple-500"
-              placeholder={INPUT_PLACEHOLDERS.sectionHeading}
-              value={sectionHeading}
-              onChange={(e) => setSectionHeading(e.target.value)}
-              disabled={isGenerating}
-            />
-          </div>
-          <div>
-            <label htmlFor="section-notes" className="block text-sm font-medium mb-2">
-              Section Notes
-            </label>
-            <Textarea
-              id="section-notes"
-              rows={6}
-              placeholder={INPUT_PLACEHOLDERS.sectionNotes}
-              value={sectionNotes}
-              onChange={(e) => setSectionNotes(e.target.value)}
-              disabled={isGenerating}
-              className="w-full resize-y focus:ring-2 focus:ring-purple-500"
-            />
-          </div>
-        </>
-      ) : (
+  return (
+    <div className="space-y-6 max-w-3xl mx-auto">
+      <h2 className="text-xl font-semibold text-purple-400">📰 Smart Article Writer</h2>
+
+      <div className="space-y-4">
         <div>
-          <label htmlFor="main-input" className="block text-sm font-medium mb-2">
-            {mode === "outline" && "Research Notes"}
-            {mode === "expand" && "Text to Expand"}
-            {mode === "polish" && "Draft to Polish"}
-          </label>
-          <Textarea
-            id="main-input"
-            rows={8}
-            placeholder={INPUT_PLACEHOLDERS[mode]}
-            value={notesInput}
-            onChange={(e) => setNotesInput(e.target.value)}
+          <label htmlFor="topic" className="block text-sm font-medium mb-1">Topic</label>
+          <input
+            id="topic"
+            type="text"
+            placeholder="e.g., EU AI Act enforcement"
+            className="w-full border rounded p-2.5 bg-transparent focus:ring-2 focus:ring-purple-500"
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
             disabled={isGenerating}
-            className="w-full resize-y focus:ring-2 focus:ring-purple-500"
           />
         </div>
-      )}
 
-      {/* Action Buttons */}
+        <div>
+          <label htmlFor="keywords" className="block text-sm font-medium mb-1">Keywords</label>
+          <input
+            id="keywords"
+            type="text"
+            placeholder="e.g., fines, compliance, AI regulation"
+            className="w-full border rounded p-2.5 bg-transparent focus:ring-2 focus:ring-purple-500"
+            value={keywords}
+            onChange={(e) => setKeywords(e.target.value)}
+            disabled={isGenerating}
+          />
+        </div>
+
+        <div>
+          <label htmlFor="notes" className="block text-sm font-medium mb-1">Brief Outline / Notes (optional)</label>
+          <Textarea
+            id="notes"
+            rows={8}
+            placeholder="Enter a short 50–100 word outline or context..."
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            disabled={isGenerating}
+            className="w-full resize-none focus:ring-2 focus:ring-purple-500 text-base leading-relaxed bg-transparent"
+          />
+        </div>
+      </div>
+
       <div className="flex gap-3 flex-wrap">
         <Button
           onClick={handleGenerate}
-          disabled={isDisabled}
+          disabled={isGenerating || !topic.trim() || !keywords.trim()}
           className="bg-purple-600 text-white px-6 py-2 disabled:opacity-50"
         >
           {isGenerating ? (
             <>
-              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              Generating...
+              <Loader2 className="h-4 w-4 animate-spin mr-2" /> Writing draft...
             </>
           ) : (
-            "Generate"
+            "Generate Article"
           )}
         </Button>
 
         {output && (
-          <Button onClick={handleCopy} variant="outline" className="border-purple-600 text-purple-600">
+          <Button onClick={handleCopy} variant="outline" className="border-purple-600 text-purple-300">
             Copy Output
           </Button>
         )}
 
-        <Button onClick={handleClear} variant="outline" disabled={isGenerating}>
-          Clear All
-        </Button>
+        <Button onClick={handleClear} variant="outline" disabled={isGenerating}>Clear</Button>
       </div>
 
-      {/* Error */}
       {error && (
-        <div className="p-4 bg-red-100 border border-red-300 rounded-md text-red-700 flex items-start gap-2">
+        <div className="p-4 bg-red-500/10 border border-red-400/40 rounded-md text-red-200 flex items-start gap-2">
           <AlertCircle className="h-5 w-5 flex-shrink-0" />
           <p>{error}</p>
         </div>
       )}
 
-      {/* Output */}
       <div>
         <div className="flex justify-between items-center mb-2">
-          <label htmlFor="output" className="block text-sm font-medium">
-            Output
-          </label>
-          {output && <span className="text-xs text-gray-500">{output.split(/\s+/).length} words</span>}
+          <label htmlFor="output" className="block text-sm font-medium">Output</label>
+          {output && <span className="text-xs text-gray-400">{wordCount} words</span>}
         </div>
         <div
           id="output"
           role="region"
           aria-live="polite"
-          className="whitespace-pre-wrap p-4 border rounded min-h-[150px] bg-purple-50 overflow-auto max-h-[500px]"
+          className="whitespace-pre-wrap p-4 border rounded bg-purple-900/10 overflow-auto h-[70vh] prose prose-invert max-w-none"
         >
-          {output || <span className="text-gray-400 italic">Your generated content will appear here...</span>}
+          {output || (
+            <span className="text-gray-500 italic">
+              Your generated article will appear here...
+            </span>
+          )}
         </div>
       </div>
     </div>
   )
 }
+
+export default WriterTab
