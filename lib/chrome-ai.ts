@@ -71,6 +71,7 @@ declare global {
         create: () => Promise<{ rewrite: (text: string, options: { style: string }) => Promise<string> }>
       }
       proofreader?: {
+        [x: string]: any
         create: () => Promise<{ proofread: (text: string, options: { explain: boolean }) => Promise<string> }>
       }
     }

@@ -1,4 +1,4 @@
-// app/layout.tsx (Next.js App Router)
+// app/layout.tsx
 import type React from "react"
 import type { Metadata } from "next"
 import { Inter, Courier_Prime } from "next/font/google"
@@ -14,30 +14,65 @@ export const metadata: Metadata = {
   generator: "v0.app",
   icons: {
     icon:
-      "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' fontSize='75' fill='%234f46e5'>✎</text></svg>",
+      "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' fontSize='75' fill='%234f46e5'>Pencil</text></svg>",
   },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  // Read both tokens from env (public)
+  // PUBLIC env vars – get these from Chrome Origin Trials
   const writerToken = process.env.NEXT_PUBLIC_WRITER_API_KEY
   const proofreaderToken = process.env.NEXT_PUBLIC_PROOFREADER_API_KEY
+  const summarizerToken = process.env.NEXT_PUBLIC_SUMMARIZER_ORIGIN_TRIAL
+  const rewriterToken = process.env.NEXT_PUBLIC_REWRITER_API_KEY
 
   return (
     <html lang="en" className="dark">
       <head>
-        {/* IMPORTANT: use httpEquiv + content */}
-        {writerToken ? (
+        {/* === Origin-Trial Tokens === */}
+        {writerToken && (
           <meta httpEquiv="origin-trial" content={writerToken} />
-        ) : null}
-        {proofreaderToken ? (
+        )}
+        {proofreaderToken && (
           <meta httpEquiv="origin-trial" content={proofreaderToken} />
-        ) : null}
-        {process.env.NEXT_PUBLIC_REWRITER_API_KEY && (
-  <meta httpEquiv="origin-trial" content={process.env.NEXT_PUBLIC_REWRITER_API_KEY} />
-)}
+        )}
+        {summarizerToken && (
+          <meta httpEquiv="origin-trial" content={summarizerToken} />
+        )}
+        {rewriterToken && (
+          <meta httpEquiv="origin-trial" content={rewriterToken} />
+        )}
+
+        {/* === Enable AI Flags on First Load === */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                if (typeof window === 'undefined') return;
+                // Force-enable AI flags (only needed once per session)
+                const flags = [
+                  '#built-in-ai',
+                  '#proofreader-api',
+                  '#summarizer-api',
+                  '#enable-experimental-webassembly-features'
+                ];
+                flags.forEach(flag => {
+                  if (window.location.href.includes(flag)) return;
+                  const url = new URL(window.location);
+                  url.hash = flag;
+                  if (!localStorage.getItem('ai-flags-set')) {
+                    localStorage.setItem('ai-flags-set', 'true');
+                    window.location.href = url.toString();
+                  }
+                });
+              })();
+            `,
+          }}
+        />
       </head>
-      <body className={`${inter.className} font-sans antialiased bg-background text-foreground`}>
+
+      <body
+        className={`${inter.className} font-sans antialiased bg-background text-foreground`}
+      >
         {children}
         <Analytics />
       </body>

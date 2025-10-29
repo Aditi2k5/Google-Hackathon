@@ -14,7 +14,7 @@ import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import { Document, Packer, Paragraph, TextRun } from "docx";
 import { saveAs } from "file-saver";
-
+import TextareaAutosize from "react-textarea-autosize";
 import {
   FileText,
   Download,
@@ -26,28 +26,27 @@ import {
 
 import { onAuthChange, signOutUser } from "@/lib/firebase";
 
-// ✅ Writer API (unchanged)
+// === REAL APIs ===
 import { getWriter, writerWriteStreaming } from "@/lib/writer";
+import { getProofreader, proofreaderStream } from "@/lib/proofreader";
+import { getSummarizer, summarizerStream } from "@/lib/summarizer";
 
-// ✅ Rewriter UI (self-contained: uses /lib/rewriter internally)
+// === Rewriter (self-contained) ===
 import RewriterTab from "@/components/tabs/rewriter-tab";
 
 export default function DashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
-
-  // which tool is active in the sidebar
   const [activeModule, setActiveModule] = useState<"writer" | "rewriter" | "proofreader" | "summarizer">("writer");
-
-  // writer/other modules state (rewriter has its own internal state)
   const [editorContent, setEditorContent] = useState("Start writing your news story here...");
   const [loading, setLoading] = useState(false);
   const [showRightPanel, setShowRightPanel] = useState(true);
   const [versions, setVersions] = useState<string[]>(["v1.0"]);
   const [output, setOutput] = useState("");
   const [error, setError] = useState("");
+  const [downloadProgress, setDownloadProgress] = useState(0);
 
-  // auth
+  // Auth
   useEffect(() => {
     const unsub = onAuthChange((u) => {
       setUser(u);
@@ -56,23 +55,22 @@ export default function DashboardPage() {
     return () => unsub();
   }, [router]);
 
-  // ─────────────────────────────────────────────────────────
-  // Invoke (Writer + mock modules). Rewriter is NOT handled here.
-  // ─────────────────────────────────────────────────────────
+  // === INVOKE ALL MODULES ===
   const handleInvoke = async () => {
     setLoading(true);
     setError("");
     setOutput("");
+    setDownloadProgress(0);
+
+    const input = editorContent.trim();
+    if (!input) {
+      setError("Please enter text in the editor.");
+      setLoading(false);
+      return;
+    }
 
     try {
-      const inputText = editorContent.trim();
-      if (!inputText) {
-        setOutput("Please add some text in the editor before invoking.");
-        setLoading(false);
-        return;
-      }
-
-      // 1) Writer: real on-device API
+      // === 1. WRITER ===
       if (activeModule === "writer") {
         await getWriter({
           tone: "neutral",
@@ -81,128 +79,95 @@ export default function DashboardPage() {
           expectedInputLanguages: ["en"],
           expectedContextLanguages: ["en"],
           outputLanguage: "en",
-          sharedContext:
-            "News article generation (AP style), factual placeholders, SEO tags, inverted pyramid.",
+          sharedContext: "AP-style news article, inverted pyramid, SEO, placeholders.",
+          onDownloadProgress: (p) => setDownloadProgress(p),
         });
 
         const prompt = `
-You are a professional news writer drafting an article for a major publication.
-Use Associated Press (AP) style and the inverted pyramid: lede, nut graf, body, sidebar.
+You are a professional news writer. Use AP style and inverted pyramid.
+Outline:
+${input}
 
-Notes/Outline:
-${inputText}
-
-Rules:
-- Use placeholders for uncertain facts: [SOURCE], [DATE], [LOCATION].
-- Add quote slots: "QUOTE" — [OFFICIAL NAME], [POSITION].
-- Include a bullet timeline of key events.
-- End with a one-line SEO summary and 3–5 SEO tags.
-- Output clean markdown, 300–2000 words.
+- Use [SOURCE], [DATE], [LOCATION] for facts.
+- Add quotes: "QUOTE" — [NAME], [TITLE].
+- End with SEO summary + 3–5 tags.
+- Output clean markdown.
         `.trim();
 
         let acc = "";
-        const stream = await writerWriteStreaming(prompt, { context: "Smart Article Writer" });
+        const stream = await writerWriteStreaming(prompt, { context: "Article Writer" });
         for await (const chunk of stream) {
           acc += chunk;
           setOutput(acc.replace(/\n\s*\n\s*\n/g, "\n\n").trim());
         }
-        setLoading(false);
-        return;
       }
 
-      // 2) Mock modules (proofreader/summarizer)
-      await new Promise((r) => setTimeout(r, 2000));
+      // === 2. PROOFREADER ===
+      else if (activeModule === "proofreader") {
+        await getProofreader({
+          onDownloadProgress: (p) => setDownloadProgress(p),
+        });
 
-      const mockOutputs: Record<string, string> = {
-        proofreader:
-          "✓ Grammar: Excellent\n✓ Tone: Professional\n✓ Clarity: High\n✓ Engagement: Strong",
-        summarizer:
-          "• Key Point 1: Main development\n• Key Point 2: Secondary impact\n• Key Point 3: Future implications",
-      };
+        let acc = "";
+        for await (const chunk of proofreaderStream(input)) {
+          acc += chunk;
+          setOutput(acc);
+        }
+      }
 
-      setOutput(mockOutputs[activeModule] || "Processing complete.");
+      // === 3. SUMMARIZER ===
+      else if (activeModule === "summarizer") {
+        await getSummarizer({
+          onDownloadProgress: (p: number) => setDownloadProgress(p),
+        });
+
+        let acc = "";
+        for await (const chunk of summarizerStream(input)) {
+          acc += chunk;
+          setOutput(acc);
+        }
+      }
+
+      // === 4. REWRITER: handled inside RewriterTab ===
+
+      // Save version
       const newVersion = `v${versions.length + 1}.0`;
       setVersions((prev) => [...prev, newVersion]);
     } catch (e: any) {
-      setError(e?.message || "Generation failed.");
+      setError(e?.message || "AI failed. Check Chrome AI flags.");
     } finally {
       setLoading(false);
     }
   };
 
-  // ─────────────────────────────────────────────────────────
-  // Exports (TXT / PDF / DOCX)
-  // ─────────────────────────────────────────────────────────
+  // === EXPORTS ===
   const handleExportTXT = () => {
-    const content = `${editorContent}\n\n---\n\n${output}`;
-    const a = document.createElement("a");
-    a.setAttribute("href", "data:text/plain;charset=utf-8," + encodeURIComponent(content));
-    a.setAttribute("download", "newsroom-forge-export.txt");
-    a.style.display = "none";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  };
-
-  // dynamic import for SSR safety
-  const handleExportPDF = async () => {
-    try {
-      const html2pdf = (await import("html2pdf.js")).default;
-      const el = document.createElement("div");
-      el.innerHTML = `
-        <h1 style="font-family:sans-serif;">Newsroom Forge Export</h1>
-        <h3>Editor Content:</h3>
-        <p>${editorContent.replace(/\n/g, "<br/>")}</p>
-        <hr/>
-        <h3>Generated Output:</h3>
-        <div>${output.replace(/\n/g, "<br/>")}</div>
-      `;
-      html2pdf().set({
-        margin: 10,
-        filename: "newsroom-forge-export.pdf",
-        html2canvas: { scale: 2 },
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-      }).from(el).save();
-    } catch (e) {
-      console.warn("PDF export not available:", e);
-    }
+    const blob = new Blob([`${editorContent}\n\n---\n\n${output}`], { type: "text/plain" });
+    saveAs(blob, "newsroom-forge.txt");
   };
 
   const handleExportDOCX = async () => {
     const doc = new Document({
-      sections: [
-        {
-          properties: {},
-          children: [
-            new Paragraph({
-              children: [new TextRun({ text: "Newsroom Forge Export", bold: true, size: 32 })],
-            }),
-            new Paragraph({ text: "\nEditor Content:\n" }),
-            new Paragraph({ text: editorContent }),
-            new Paragraph({ text: "\nGenerated Output:\n" }),
-            new Paragraph({ text: output }),
-          ],
-        },
-      ],
+      sections: [{
+        children: [
+          new Paragraph({ children: [new TextRun({ text: "Newsroom Forge", bold: true, size: 32 })] }),
+          new Paragraph({ text: "\nEditor Content:\n" }),
+          new Paragraph({ text: editorContent }),
+          new Paragraph({ text: "\nGenerated Output:\n" }),
+          new Paragraph({ text: output }),
+        ],
+      }],
     });
-
     const blob = await Packer.toBlob(doc);
-    saveAs(blob, "newsroom-forge-export.docx");
+    saveAs(blob, "newsroom-forge.docx");
   };
 
-  // sign out
   const handleLogout = async () => {
     await signOutUser();
     router.push("/auth");
   };
 
-  if (!user) {
-    return (
-      <main className="min-h-screen flex items-center justify-center">
-        <p className="text-sm text-muted-foreground">Loading dashboard...</p>
-      </main>
-    );
-  }
+  if (!user) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
 
   return (
     <main className="min-h-screen bg-background">
@@ -211,154 +176,104 @@ Rules:
       <div className="flex">
         <Sidebar
           activeModule={activeModule}
-          onModuleChange={(mod) => {
-            if (!loading) setActiveModule(mod as any); // block switching while generating
-          }}
+          onModuleChange={(mod) => !loading && setActiveModule(mod as any)}
         />
 
-        <div className="ml-56 sm:ml-64 flex-1 p-4 sm:p-6 md:p-8 pt-20 sm:pt-24 md:pt-28">
-          <motion.div
-            className="max-w-7xl mx-auto"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.5 }}
-          >
-            {/* Header row */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+        <div className="ml-56 sm:ml-64 flex-1 p-4 sm:p-6 md:p-8 pt-20">
+          <motion.div className="max-w-7xl mx-auto">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
               <div>
-                <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold gradient-text typewriter-headline">
+                <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold gradient-text">
                   {activeModule.charAt(0).toUpperCase() + activeModule.slice(1)}
                 </h1>
                 <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-                  AI-powered content {activeModule}
+                  AI-powered {activeModule}
                 </p>
               </div>
 
-              {/* Right Controls */}
-              <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto flex-wrap">
+              <div className="flex gap-2 flex-wrap">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => setShowRightPanel(!showRightPanel)}
-                  className="glass-sm border-white/20 text-xs sm:text-sm py-2 sm:py-3"
                 >
                   {showRightPanel ? "Hide" : "Show"} Controls
                 </Button>
 
                 <DropdownMenu.Root>
-  <DropdownMenu.Trigger asChild>
-    <Button
-      variant="outline"
-      size="sm"
-      className="glass-sm border-white/20 bg-transparent text-xs sm:text-sm py-2 sm:py-3 flex items-center"
-    >
-      <Download className="h-3 sm:h-4 w-3 sm:w-4 mr-2" />
-      Export
-      <ChevronDown className="h-3 sm:h-4 w-3 sm:w-4 ml-2" />
-    </Button>
-  </DropdownMenu.Trigger>
-
-                    {/* 👇 Portal to body so it can't be clipped by siblings */}
-  <DropdownMenu.Portal>
-    <DropdownMenu.Content
-      sideOffset={6}
-      align="end"
-      collisionPadding={8}
-      className="glass-news rounded-md p-2 shadow-lg text-xs sm:text-sm min-w-[170px] z-[100]"
-    >
-      <DropdownMenu.Item
-        onSelect={handleExportTXT}
-        className="cursor-pointer px-3 py-2 rounded hover:bg-white/10 transition"
-      >
-        Export as TXT
-      </DropdownMenu.Item>
-
-      <DropdownMenu.Item
-        // onSelect={handleExportPDF} // if/when you re-enable PDF
-        className="cursor-pointer px-3 py-2 rounded hover:bg-white/10 transition"
-      >
-        Export as PDF
-      </DropdownMenu.Item>
-
-      <DropdownMenu.Item
-        onSelect={handleExportDOCX}
-        className="cursor-pointer px-3 py-2 rounded hover:bg-white/10 transition"
-      >
-        Export as DOCX
-      </DropdownMenu.Item>
-
-      <DropdownMenu.Separator className="h-px my-2 bg-white/10" />
-
-      <DropdownMenu.Item
-        onSelect={handleLogout}
-        className="cursor-pointer px-3 py-2 rounded text-red-400 hover:bg-red-500/10 transition flex items-center gap-2"
-      >
-        <LogOut className="h-3.5 w-3.5" />
-        Sign Out
-      </DropdownMenu.Item>
-    </DropdownMenu.Content>
-  </DropdownMenu.Portal>
-</DropdownMenu.Root>
+                  <DropdownMenu.Trigger asChild>
+                    <Button variant="outline" size="sm">
+                      <Download className="h-4 w-4 mr-2" /> Export <ChevronDown className="h-4 w-4 ml-2" />
+                    </Button>
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Portal>
+                    <DropdownMenu.Content className="glass-news rounded-md p-2 shadow-lg text-sm min-w-[160px] z-[100]">
+                      <DropdownMenu.Item onSelect={handleExportTXT} className="cursor-pointer px-3 py-2 rounded hover:bg-white/10">
+                        TXT
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Item onSelect={handleExportDOCX} className="cursor-pointer px-3 py-2 rounded hover:bg-white/10">
+                        DOCX
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Separator className="h-px my-2 bg-white/10" />
+                      <DropdownMenu.Item onSelect={handleLogout} className="text-red-400 cursor-pointer px-3 py-2 rounded hover:bg-red-500/10">
+                        <LogOut className="h-3.5 w-3.5 mr-2" /> Sign Out
+                      </DropdownMenu.Item>
+                    </DropdownMenu.Content>
+                  </DropdownMenu.Portal>
+                </DropdownMenu.Root>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 sm:gap-6">
-              {/* Main column */}
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+              {/* Main Editor */}
               <div className="lg:col-span-3 space-y-4">
                 {activeModule === "rewriter" ? (
-                  // 🔹 ONLY the Rewriter UI when module is "rewriter"
                   <RewriterTab />
                 ) : (
-                  // 🔸 Writer + other modules UI (unchanged)
                   <>
                     <EditorToolbar
-                      onBold={() => console.log("Bold")}
-                      onItalic={() => console.log("Italic")}
-                      onHeading={() => console.log("Heading")}
-                      onQuote={() => console.log("Quote")}
-                      onLink={() => console.log("Link")}
+                      onBold={() => {}}
+                      onItalic={() => {}}
+                      onHeading={() => {}}
+                      onQuote={() => {}}
+                      onLink={() => {}}
                       onExport={handleExportTXT}
-                      onSave={() => console.log("Save")}
-                      onUndo={() => console.log("Undo")}
+                      onSave={() => {}}
+                      onUndo={() => {}}
                     />
 
-                    <motion.div
-                      className="glass-lg p-4 sm:p-6 md:p-8 min-h-[400px] sm:min-h-[500px] md:min-h-[calc(100vh-300px)] rounded-2xl sm:rounded-3xl"
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.5 }}
-                    >
-                      <textarea
+                    <motion.div className="glass-lg p-6 rounded-3xl min-h-[500px]">
+                      <TextareaAutosize
                         value={editorContent}
                         onChange={(e) => setEditorContent(e.target.value)}
-                        className="w-full h-full bg-transparent text-foreground placeholder-muted-foreground focus:outline-none resize-none text-sm sm:text-base"
-                        placeholder="Start writing your news story here..."
+                        className="w-full bg-transparent text-base resize-none outline-none"
+                        minRows={12}
+                        placeholder="Enter your text..."
                       />
                     </motion.div>
 
-                    <motion.div
-                      className="glass-lg p-4 sm:p-6 rounded-2xl sm:rounded-3xl"
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.5 }}
-                    >
+                    <motion.div className="glass-lg p-6 rounded-3xl">
                       <div className="flex items-center gap-2 mb-4">
                         {loading ? (
-                          <Loader2 className="h-4 sm:h-5 w-4 sm:w-5 text-indigo-400 animate-spin" />
+                          <Loader2 className="h-5 w-5 text-indigo-400 animate-spin" />
                         ) : (
-                          <CheckCircle className="h-4 sm:h-5 w-4 sm:w-5 text-green-400" />
+                          <CheckCircle className="h-5 w-5 text-green-400" />
                         )}
-                        <h3 className="font-semibold text-sm sm:text-base">Output</h3>
+                        <h3 className="font-semibold">Output</h3>
+                        {downloadProgress > 0 && downloadProgress < 100 && (
+                          <span className="text-xs text-gray-400">({downloadProgress}%)</span>
+                        )}
                       </div>
 
-                      <div className="prose prose-invert max-w-none text-sm sm:text-base leading-relaxed">
+                      <div className="prose prose-invert max-w-none">
                         {output ? (
                           <ReactMarkdown rehypePlugins={[rehypeSanitize]}>
                             {output}
                           </ReactMarkdown>
                         ) : (
                           <span className="text-muted-foreground italic">
-                            Your result will appear here…
+                            Result will appear here...
                           </span>
                         )}
                         {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
@@ -368,15 +283,9 @@ Rules:
                 )}
               </div>
 
-              {/* Right panel */}
+              {/* Right Panel */}
               {showRightPanel && (
-                <motion.div
-                  className="lg:col-span-1 space-y-4"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.5 }}
-                >
-                  {/* Keep Invoke button for everything EXCEPT rewriter */}
+                <motion.div className="lg:col-span-1 space-y-4">
                   {activeModule !== "rewriter" && (
                     <APIControls
                       module={activeModule}
@@ -385,19 +294,15 @@ Rules:
                     />
                   )}
 
-                  {/* Versions */}
                   <Card className="glass-news p-4">
                     <h3 className="font-semibold mb-3 flex items-center gap-2 text-sm">
-                      <FileText className="h-4 w-4 text-indigo-400 flex-shrink-0" />
+                      <FileText className="h-4 w-4 text-indigo-400" />
                       Versions
                     </h3>
                     <div className="space-y-2 max-h-48 overflow-y-auto">
-                      {versions.map((version) => (
-                        <button
-                          key={version}
-                          className="w-full text-left px-3 py-2 rounded-lg text-xs sm:text-sm hover:bg-white/10 transition-colors"
-                        >
-                          {version}
+                      {versions.map((v) => (
+                        <button key={v} className="w-full text-left px-3 py-2 rounded text-sm hover:bg-white/10">
+                          {v}
                         </button>
                       ))}
                     </div>
