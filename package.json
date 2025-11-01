@@ -9,6 +9,7 @@
     "start": "next start"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@hookform/resolvers": "^3.10.0",
     "@radix-ui/react-accordion": "1.2.2",
     "@radix-ui/react-alert-dialog": "1.1.4",
@@ -45,6 +46,7 @@
     "date-fns": "4.1.0",
     "docx": "^9.5.1",
     "embla-carousel-react": "8.5.1",
+    "file-save": "^0.2.0",
     "file-saver": "^2.0.5",
     "firebase": "^12.4.0",
     "framer-motion": "^12.23.24",

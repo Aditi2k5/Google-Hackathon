@@ -6,48 +6,31 @@ import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Header } from "@/components/header"
-import { Zap, RefreshCw, CheckCircle, Sparkles, ArrowRight, Star } from "lucide-react"
+import { Zap, RefreshCw, Globe, Home, ArrowRight } from "lucide-react"
 
 const features = [
   {
+    icon: Home,
+    title: "Prompt API",
+    description: "Generate creative topic ideas from seed concepts",
+  },
+  {
     icon: Zap,
-    title: "Writer",
+    title: "Writer API",
     description: "Generate compelling news drafts from raw information",
   },
   {
     icon: RefreshCw,
-    title: "Rewriter",
+    title: "Rewriter API",
     description: "Refine and restructure existing content",
   },
   {
-    icon: CheckCircle,
-    title: "Proofreader",
-    description: "Polish grammar, style, and tone",
-  },
-  {
-    icon: Sparkles,
-    title: "Summarizer",
-    description: "Create concise summaries of long-form content",
+    icon: Globe,
+    title: "Translator API",
+    description: "Translate content across multiple languages instantly",
   },
 ]
 
-const testimonials = [
-  {
-    name: "Sarah Chen",
-    role: "News Editor",
-    quote: "Newsroom Forge cut our drafting time in half.",
-  },
-  {
-    name: "Marcus Johnson",
-    role: "Journalist",
-    quote: "The AI suggestions are remarkably accurate and helpful.",
-  },
-  {
-    name: "Elena Rodriguez",
-    role: "Content Director",
-    quote: "Our team productivity increased dramatically.",
-  },
-]
 
 export default function LandingPage() {
   const [activeTestimonial, setActiveTestimonial] = useState(0)
@@ -112,14 +95,6 @@ export default function LandingPage() {
                   <ArrowRight className="ml-2 h-4 sm:h-5 w-4 sm:w-5" />
                 </Button>
               </Link>
-              <Link href="/auth?tab=signin" className="w-full sm:w-auto">
-                <Button
-                  variant="outline"
-                  className="glass-sm border-white/20 hover:bg-white/10 px-6 sm:px-8 py-5 sm:py-6 text-base sm:text-lg bg-transparent w-full"
-                >
-                  Guest Wire
-                </Button>
-              </Link>
             </motion.div>
           </div>
         </motion.div>
@@ -166,37 +141,7 @@ export default function LandingPage() {
           <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-center mb-12 md:mb-16 gradient-text">
             Loved by Newsrooms
           </h2>
-          <div className="glass-news p-8 sm:p-12">
-            <motion.div
-              key={activeTestimonial}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.5 }}
-            >
-              <div className="flex gap-1 mb-4">
-                {[...Array(5)].map((_, i) => (
-                  <Star key={i} className="h-4 sm:h-5 w-4 sm:w-5 fill-yellow-400 text-yellow-400" />
-                ))}
-              </div>
-              <p className="text-lg sm:text-xl md:text-2xl mb-6 text-foreground">
-                "{testimonials[activeTestimonial].quote}"
-              </p>
-              <p className="font-semibold text-sm sm:text-base">{testimonials[activeTestimonial].name}</p>
-              <p className="text-xs sm:text-sm text-muted-foreground">{testimonials[activeTestimonial].role}</p>
-            </motion.div>
-            <div className="flex gap-2 justify-center mt-8">
-              {testimonials.map((_, index) => (
-                <button
-                  key={index}
-                  onClick={() => setActiveTestimonial(index)}
-                  className={`h-2 rounded-full transition-all ${
-                    index === activeTestimonial ? "bg-indigo-500 w-8" : "bg-white/20 w-2"
-                  }`}
-                />
-              ))}
-            </div>
-          </div>
+  
         </motion.div>
       </section>
 

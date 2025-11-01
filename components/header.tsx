@@ -22,7 +22,7 @@ export function Header({ showUserMenu = false }: HeaderProps) {
   })
 
   const handleLogout = () => {
-    signOutUser
+    signOutUser()
     router.push("/")
   }
 
@@ -30,7 +30,7 @@ export function Header({ showUserMenu = false }: HeaderProps) {
     <header className="fixed top-0 left-0 right-0 z-50 h-12 sm:h-14 md:h-16 glass-news border-b border-white/10 flex items-center justify-between px-4 sm:px-6 md:px-8">
       <motion.div
         className="flex items-center gap-2 sm:gap-3"
-        initial={{ opacity: 0, x: -20 }}
+        initial={{ opacity: 0, x: 10 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.5 }}
       >
@@ -41,7 +41,7 @@ export function Header({ showUserMenu = false }: HeaderProps) {
         <motion.div
           className="whitespace-nowrap text-xs md:text-sm text-muted-foreground typewriter"
           animate={{ x: ["100%", "-100%"] }}
-          transition={{ duration: 20, repeat: Number.POSITIVE_INFINITY, ease: "linear" }}
+          transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
         >
           Forge Your Wire • API Ready • Deadline: Now • Breaking Drafts • Forge Your Wire • API Ready • Deadline: Now
         </motion.div>
@@ -52,20 +52,32 @@ export function Header({ showUserMenu = false }: HeaderProps) {
           <DropdownMenu.Trigger asChild>
             <Button variant="ghost" size="icon" className="rounded-full h-8 w-8 sm:h-10 sm:w-10">
               <Avatar className="h-8 w-8 sm:h-10 sm:w-10">
-                <AvatarFallback className="bg-indigo-500 text-white text-xs sm:text-sm">
+                <AvatarFallback className="bg-indigo-500 text-white text-xs sm:text-sm rounded-full flex items-center justify-center w-full h-full">
                   {email.charAt(0).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
             </Button>
           </DropdownMenu.Trigger>
-          <DropdownMenu.Content align="end" className="glass-news">
-            <DropdownMenu.Item disabled className="text-xs text-muted-foreground">
-              {email}
-            </DropdownMenu.Item>
-            <DropdownMenu.Item onSelect={handleLogout} className="text-xs sm:text-sm">
-              Logout
-            </DropdownMenu.Item>
-          </DropdownMenu.Content>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content 
+              align="end" 
+              className="glass-news border border-white/10 rounded-lg p-2 min-w-[180px] shadow-lg"
+            >
+              <DropdownMenu.Item 
+                disabled 
+                className="text-xs text-muted-foreground px-3 py-2 outline-none"
+              >
+                {email}
+              </DropdownMenu.Item>
+              <DropdownMenu.Separator className="h-px bg-white/10 my-1" />
+              <DropdownMenu.Item 
+                onSelect={handleLogout} 
+                className="text-xs sm:text-sm px-3 py-2 rounded cursor-pointer hover:bg-white/10 outline-none"
+              >
+                Logout
+              </DropdownMenu.Item>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
         </DropdownMenu.Root>
       )}
     </header>

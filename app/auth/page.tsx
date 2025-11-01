@@ -1,17 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import * as Tabs from "@radix-ui/react-tabs";
-import { Mail, Lock, Loader2, User } from "lucide-react";
+import { Mail, Lock, Loader2, User, CheckCircle2 } from "lucide-react";
 import {
   signInWithGoogle,
   signInWithEmail,
   signUpWithEmail,
+  getCurrentUser,
 } from "@/lib/firebase";
 
 export default function AuthPage() {
@@ -22,18 +23,34 @@ export default function AuthPage() {
   const [username, setUsername] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  // Check if user is already authenticated
+  useEffect(() => {
+    const user = getCurrentUser();
+    if (user) {
+      router.replace("/dashboard");
+    }
+  }, [router]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setSuccess("");
     setLoading(true);
 
     try {
       await signInWithEmail(email, password);
-      router.push("/dashboard");
+      
+      // Show success briefly before redirect
+      setSuccess("Signed in successfully!");
+      
+      // Use replace to prevent back button issues
+      setTimeout(() => {
+        router.replace("/dashboard");
+      }, 500);
     } catch (err: any) {
       setError(err.message || "Sign-in failed");
-    } finally {
       setLoading(false);
     }
   };
@@ -41,32 +58,66 @@ export default function AuthPage() {
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    setLoading(true);
+    setSuccess("");
 
+    // Validation
     if (!username.trim()) {
       setError("Please enter a username");
-      setLoading(false);
       return;
     }
 
+    if (username.trim().length < 3) {
+      setError("Username must be at least 3 characters");
+      return;
+    }
+
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters");
+      return;
+    }
+
+    setLoading(true);
+
     try {
       await signUpWithEmail(email, password, username);
-      router.push("/dashboard");
+      
+      // Show success message
+      setSuccess("Account created! Redirecting to sign in...");
+      
+      // Clear form
+      setEmail("");
+      setPassword("");
+      setUsername("");
+      
+      // Switch to sign-in tab after a brief delay
+      setTimeout(() => {
+        setActiveTab("signin");
+        setSuccess("Please sign in with your new account");
+        setLoading(false);
+      }, 1500);
     } catch (err: any) {
       setError(err.message || "Sign-up failed");
-    } finally {
       setLoading(false);
     }
   };
 
   const handleGoogleAuth = async () => {
+    setError("");
+    setSuccess("");
     setLoading(true);
+
     try {
       await signInWithGoogle();
-      router.push("/dashboard");
+      
+      // Show success briefly
+      setSuccess("Signed in with Google!");
+      
+      // Redirect to dashboard
+      setTimeout(() => {
+        router.replace("/dashboard");
+      }, 500);
     } catch (err: any) {
       setError(err.message || "Google sign-in failed");
-    } finally {
       setLoading(false);
     }
   };
@@ -93,6 +144,7 @@ export default function AuthPage() {
             <Tabs.List className="grid w-full grid-cols-2 glass-sm mb-1">
               <Tabs.Trigger
                 value="signin"
+                disabled={loading}
                 className={`text-xs sm:text-sm py-2 rounded-t-md transition-all ${
                   activeTab === "signin"
                     ? "bg-white/10 text-indigo-500 font-bold shadow"
@@ -103,6 +155,7 @@ export default function AuthPage() {
               </Tabs.Trigger>
               <Tabs.Trigger
                 value="signup"
+                disabled={loading}
                 className={`text-xs sm:text-sm py-2 rounded-t-md transition-all ${
                   activeTab === "signup"
                     ? "bg-white/10 text-indigo-500 font-bold shadow"
@@ -122,6 +175,8 @@ export default function AuthPage() {
                   icon={<Mail />}
                   value={email}
                   onChange={setEmail}
+                  disabled={loading}
+                  required
                 />
                 <AuthInput
                   label="Password"
@@ -129,8 +184,15 @@ export default function AuthPage() {
                   icon={<Lock />}
                   value={password}
                   onChange={setPassword}
+                  disabled={loading}
+                  required
                 />
-                {error && <ErrorMessage text={error} />}
+                
+                <AnimatePresence mode="wait">
+                  {error && <ErrorMessage text={error} />}
+                  {success && <SuccessMessage text={success} />}
+                </AnimatePresence>
+                
                 <SubmitButton text="Sign In" loading={loading} />
               </form>
             </Tabs.Content>
@@ -144,6 +206,9 @@ export default function AuthPage() {
                   icon={<User />}
                   value={username}
                   onChange={setUsername}
+                  disabled={loading}
+                  required
+                  minLength={3}
                 />
                 <AuthInput
                   label="Email"
@@ -151,6 +216,8 @@ export default function AuthPage() {
                   icon={<Mail />}
                   value={email}
                   onChange={setEmail}
+                  disabled={loading}
+                  required
                 />
                 <AuthInput
                   label="Password"
@@ -158,8 +225,16 @@ export default function AuthPage() {
                   icon={<Lock />}
                   value={password}
                   onChange={setPassword}
+                  disabled={loading}
+                  required
+                  minLength={6}
                 />
-                {error && <ErrorMessage text={error} />}
+                
+                <AnimatePresence mode="wait">
+                  {error && <ErrorMessage text={error} />}
+                  {success && <SuccessMessage text={success} />}
+                </AnimatePresence>
+                
                 <SubmitButton text="Sign Up" loading={loading} />
               </form>
             </Tabs.Content>
@@ -209,7 +284,7 @@ export default function AuthPage() {
   );
 }
 
-function AuthInput({ label, type, icon, value, onChange }: any) {
+function AuthInput({ label, type, icon, value, onChange, disabled, required, minLength }: any) {
   return (
     <div className="space-y-2">
       <label className="text-xs sm:text-sm font-medium">{label}</label>
@@ -220,7 +295,10 @@ function AuthInput({ label, type, icon, value, onChange }: any) {
           placeholder={label}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="glass-sm pl-10 py-5 sm:py-6 text-sm"
+          disabled={disabled}
+          required={required}
+          minLength={minLength}
+          className="glass-sm pl-10 py-5 sm:py-6 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
         />
       </div>
     </div>
@@ -229,9 +307,28 @@ function AuthInput({ label, type, icon, value, onChange }: any) {
 
 function ErrorMessage({ text }: any) {
   return (
-    <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs sm:text-sm">
+    <motion.div
+      initial={{ opacity: 0, y: -10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -10 }}
+      className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs sm:text-sm"
+    >
       {text}
-    </div>
+    </motion.div>
+  );
+}
+
+function SuccessMessage({ text }: any) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -10 }}
+      className="p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400 text-xs sm:text-sm flex items-center gap-2"
+    >
+      <CheckCircle2 className="h-4 w-4" />
+      {text}
+    </motion.div>
   );
 }
 
@@ -240,7 +337,7 @@ function SubmitButton({ text, loading }: any) {
     <Button
       type="submit"
       disabled={loading}
-      className="w-full glass-sm bg-indigo-500 hover:bg-indigo-600 text-white py-5 sm:py-6 text-sm sm:text-base shadow-xl"
+      className="w-full glass-sm bg-indigo-500 hover:bg-indigo-600 text-white py-5 sm:py-6 text-sm sm:text-base shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
     >
       {loading ? (
         <>

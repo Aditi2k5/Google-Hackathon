@@ -10,19 +10,17 @@ const courierPrime = Courier_Prime({ weight: ["400", "700"], subsets: ["latin"] 
 
 export const metadata: Metadata = {
   title: "Newsroom Forge - AI-Powered News Drafting",
-  description: "AI-Powered Wire Stories for Deadline Warriors",
+  description: "AI-Powered Wire Stories with Smart Translation",
   generator: "v0.app",
   icons: {
     icon:
-      "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' fontSize='75' fill='%234f46e5'>Pencil</text></svg>",
+      "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' fontSize='75' fill='%234f46e5'>📰</text></svg>",
   },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  // PUBLIC env vars – get these from Chrome Origin Trials
+  // PUBLIC env vars — get these from Chrome Origin Trials
   const writerToken = process.env.NEXT_PUBLIC_WRITER_API_KEY
-  const proofreaderToken = process.env.NEXT_PUBLIC_PROOFREADER_API_KEY
-  const summarizerToken = process.env.NEXT_PUBLIC_SUMMARIZER_ORIGIN_TRIAL
   const rewriterToken = process.env.NEXT_PUBLIC_REWRITER_API_KEY
 
   return (
@@ -31,12 +29,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* === Origin-Trial Tokens === */}
         {writerToken && (
           <meta httpEquiv="origin-trial" content={writerToken} />
-        )}
-        {proofreaderToken && (
-          <meta httpEquiv="origin-trial" content={proofreaderToken} />
-        )}
-        {summarizerToken && (
-          <meta httpEquiv="origin-trial" content={summarizerToken} />
         )}
         {rewriterToken && (
           <meta httpEquiv="origin-trial" content={rewriterToken} />
@@ -51,8 +43,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 // Force-enable AI flags (only needed once per session)
                 const flags = [
                   '#built-in-ai',
-                  '#proofreader-api',
-                  '#summarizer-api',
+                  '#translation-api',
+                  '#language-detection-api',
                   '#enable-experimental-webassembly-features'
                 ];
                 flags.forEach(flag => {
