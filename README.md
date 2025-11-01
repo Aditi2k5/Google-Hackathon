@@ -1,1 +1,1 @@
-# AI writing assistant frontend
+Newsforge
