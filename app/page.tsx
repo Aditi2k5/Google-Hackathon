@@ -110,7 +110,10 @@ export default function LandingPage() {
         >
           <motion.h2
             className="text-3xl sm:text-4xl md:text-5xl font-bold text-center mb-12 md:mb-16 gradient-text"
-            variants={itemVariants}
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.7, ease: [0.4, 0, 0.2, 1] }}
           >
             Powerful AI Modules
           </motion.h2>
@@ -118,7 +121,13 @@ export default function LandingPage() {
             {features.map((feature, index) => {
               const Icon = feature.icon
               return (
-                <motion.div key={index} variants={itemVariants}>
+                <motion.div
+                  key={index}
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.7, ease: [0.4, 0, 0.2, 1] }}
+                >
                   <Card className="glass-news p-6 h-full hover:bg-white/10 transition-colors cursor-pointer">
                     <Icon className="h-10 sm:h-12 w-10 sm:w-12 text-indigo-400 mb-4" />
                     <h3 className="text-base sm:text-lg font-semibold mb-2">{feature.title}</h3>

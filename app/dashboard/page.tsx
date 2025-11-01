@@ -88,7 +88,20 @@ export default function DashboardPage() {
       <Header showUserMenu={true} />
 
       <div className="flex">
-        <Sidebar activeModule={activeModule} onModuleChange={setActiveModule} />
+        <Sidebar
+          activeModule={activeModule}
+          onModuleChange={(module: string) => {
+            // Only allow module changes to those in the union type
+            if (
+              module === "prompt-api" ||
+              module === "writer" ||
+              module === "rewriter" ||
+              module === "translator"
+            ) {
+              setActiveModule(module);
+            }
+          }}
+        />
 
         {/* Increased top padding to prevent header overlap */}
         <div className="ml-56 sm:ml-64 flex-1 p-4 sm:p-6 md:p-8 pt-20 sm:pt-24 md:pt-28">
