@@ -16,6 +16,9 @@ import {
   Upload,
 } from "lucide-react";
 import { saveAs } from "file-saver";
+// @ts-ignore
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// Could not find a declaration file for module 'file-saver'.
 import { readFileAsText, setupDragAndDrop } from "@/lib/file-utils";
 
 import {
